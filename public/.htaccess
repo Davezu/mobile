@@ -1,0 +1,17 @@
+# Enable Rewrite Engine
+RewriteEngine On
+
+# Set base directory
+RewriteBase /e-commerce/public/
+
+# Redirect all requests to index.php except for existing files/directories
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php [QSA,L]
+
+# Set default charset
+AddDefaultCharset UTF-8
+
+# Enable error pages
+ErrorDocument 404 /e-commerce/public/index.php
+

@@ -1,0 +1,83 @@
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Composer dependencies
+/vendor/
+composer.lock
+composer.phar
+
+# Node modules (if using any frontend build tools)
+node_modules/
+npm-debug.log
+yarn-error.log
+package-lock.json
+
+# Logs
+*.log
+logs/
+error.log
+access.log
+
+# Cache directories
+cache/
+tmp/
+temp/
+*.cache
+
+# Upload directories (exclude uploaded files but keep the directory structure)
+public/uploads/*
+!public/uploads/.gitkeep
+storage/uploads/*
+!storage/uploads/.gitkeep
+
+# Session files
+sessions/
+*.session
+
+# Database dumps
+*.sql
+*.sqlite
+*.db
+
+# OS generated files
+Thumbs.db
+Desktop.ini
+.Spotlight-V100
+.Trashes
+
+# PHP specific
+*.php~
+.phpunit.result.cache
+phpunit.xml
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Compiled files
+*.com
+*.class
+*.dll
+*.exe
+*.o
+*.so
+
+# Configuration overrides (keep examples, ignore actual configs)
+config/config.local.php
+config/database.local.php
+
+# Security keys
+*.pem
+*.key
+*.crt
