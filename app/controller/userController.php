@@ -18,8 +18,7 @@ class UserController
      */
     private function requireAdmin()
     {
-        $authController = new AuthController();
-        $user = $authController->getCurrentUser();
+        $user = verifyToken();
 
         if (!$user) {
             Response::forbidden('Please login to continue');

@@ -1,7 +1,5 @@
 <?php
 
-define("APP_ACCESS", true);
-
 // Enable CORS for API
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
@@ -112,6 +110,12 @@ try {
     }
     
     // Admin Product Routes
+    elseif (preg_match('#^/api/admin/products$#', $path) && $requestMethod === 'GET') {
+        error_log("Admin products route matched");
+        require_once __DIR__ . '/../app/controller/productsController.php';
+        $controller = new ProductsController();
+        $controller->index();
+    }
     elseif (preg_match('#^/api/admin/products$#', $path) && $requestMethod === 'POST') {
         require_once __DIR__ . '/../app/controller/productsController.php';
         $controller = new ProductsController();
@@ -128,31 +132,41 @@ try {
         $controller->delete($matches[1]);
     }
     
-    // Payment Routes
-    elseif (preg_match('#^/api/payment/test$#', $path) && $requestMethod === 'GET') {
-        require_once __DIR__ . '/../app/controller/paymentController.php';
-        $controller = new PaymentController();
+    // PayMongo Payment Routes
+    elseif (preg_match('#^/api/paymongo/test$#', $path) && $requestMethod === 'GET') {
+        require_once __DIR__ . '/../app/controller/paymongoController.php';
+        $controller = new PayMongoController();
         $controller->test();
     }
-    elseif (preg_match('#^/api/payment/auth-test$#', $path) && $requestMethod === 'GET') {
-        require_once __DIR__ . '/../app/controller/paymentController.php';
-        $controller = new PaymentController();
-        $controller->authTest();
-    }
-    elseif (preg_match('#^/api/payment/create-intent$#', $path) && $requestMethod === 'POST') {
-        require_once __DIR__ . '/../app/controller/paymentController.php';
-        $controller = new PaymentController();
+    elseif (preg_match('#^/api/paymongo/create-payment-intent$#', $path) && $requestMethod === 'POST') {
+        require_once __DIR__ . '/../app/controller/paymongoController.php';
+        $controller = new PayMongoController();
         $controller->createPaymentIntent();
     }
-    elseif (preg_match('#^/api/payment/confirm$#', $path) && $requestMethod === 'POST') {
-        require_once __DIR__ . '/../app/controller/paymentController.php';
-        $controller = new PaymentController();
-        $controller->confirmPayment();
+    elseif (preg_match('#^/api/paymongo/create-payment-method$#', $path) && $requestMethod === 'POST') {
+        require_once __DIR__ . '/../app/controller/paymongoController.php';
+        $controller = new PayMongoController();
+        $controller->createPaymentMethod();
     }
-    elseif (preg_match('#^/api/payment/create-test-payment$#', $path) && $requestMethod === 'POST') {
-        require_once __DIR__ . '/../app/controller/paymentController.php';
-        $controller = new PaymentController();
-        $controller->createSandboxPayment();
+    elseif (preg_match('#^/api/paymongo/create-source$#', $path) && $requestMethod === 'POST') {
+        require_once __DIR__ . '/../app/controller/paymongoController.php';
+        $controller = new PayMongoController();
+        $controller->createSource();
+    }
+    elseif (preg_match('#^/api/paymongo/attach-payment$#', $path) && $requestMethod === 'POST') {
+        require_once __DIR__ . '/../app/controller/paymongoController.php';
+        $controller = new PayMongoController();
+        $controller->attachPayment();
+    }
+    elseif (preg_match('#^/api/paymongo/payment-success$#', $path) && $requestMethod === 'GET') {
+        require_once __DIR__ . '/../app/controller/paymongoController.php';
+        $controller = new PayMongoController();
+        $controller->paymentSuccess();
+    }
+    elseif (preg_match('#^/api/paymongo/payment-failed$#', $path) && $requestMethod === 'GET') {
+        require_once __DIR__ . '/../app/controller/paymongoController.php';
+        $controller = new PayMongoController();
+        $controller->paymentFailed();
     }
     
     // Order Routes
@@ -174,6 +188,7 @@ try {
     
     // Admin Order Routes
     elseif (preg_match('#^/api/admin/orders$#', $path) && $requestMethod === 'GET') {
+        error_log("Admin orders route matched");
         require_once __DIR__ . '/../app/controller/orderController.php';
         $controller = new OrderController();
         $controller->adminIndex();
@@ -185,6 +200,34 @@ try {
     }
     
     // Admin User Routes
+    elseif (preg_match('#^/api/admin/users$#', $path) && $requestMethod === 'GET') {
+        error_log("Admin users route matched");
+        require_once __DIR__ . '/../app/controller/userController.php';
+        $controller = new UserController();
+        $controller->getAllUsers();
+    }
+    elseif (preg_match('#^/api/admin/users/(\d+)$#', $path, $matches) && $requestMethod === 'GET') {
+        require_once __DIR__ . '/../app/controller/userController.php';
+        $controller = new UserController();
+        $controller->getUserById($matches[1]);
+    }
+    elseif (preg_match('#^/api/admin/users/(\d+)/status$#', $path, $matches) && $requestMethod === 'PUT') {
+        require_once __DIR__ . '/../app/controller/userController.php';
+        $controller = new UserController();
+        $controller->updateUserStatus($matches[1]);
+    }
+    elseif (preg_match('#^/api/admin/users/(\d+)/role$#', $path, $matches) && $requestMethod === 'PUT') {
+        require_once __DIR__ . '/../app/controller/userController.php';
+        $controller = new UserController();
+        $controller->updateUserRole($matches[1]);
+    }
+    elseif (preg_match('#^/api/admin/users/(\d+)$#', $path, $matches) && $requestMethod === 'DELETE') {
+        require_once __DIR__ . '/../app/controller/userController.php';
+        $controller = new UserController();
+        $controller->deleteUser($matches[1]);
+    }
+    
+    // Regular User Routes
     elseif (preg_match('#^/api/users$#', $path) && $requestMethod === 'GET') {
         require_once __DIR__ . '/../app/controller/userController.php';
         $controller = new UserController();
@@ -209,6 +252,28 @@ try {
         require_once __DIR__ . '/../app/controller/userController.php';
         $controller = new UserController();
         $controller->deleteUser($matches[1]);
+    }
+    
+    // Image Upload Routes (Admin only)
+    elseif (preg_match('#^/api/admin/upload-image$#', $path) && $requestMethod === 'POST') {
+        require_once __DIR__ . '/../app/controller/imageController.php';
+        $controller = new ImageController();
+        $controller->uploadImage();
+    }
+    elseif (preg_match('#^/api/admin/upload-image-url$#', $path) && $requestMethod === 'POST') {
+        require_once __DIR__ . '/../app/controller/imageController.php';
+        $controller = new ImageController();
+        $controller->uploadImageFromUrl();
+    }
+    elseif (preg_match('#^/api/admin/delete-image$#', $path) && $requestMethod === 'DELETE') {
+        require_once __DIR__ . '/../app/controller/imageController.php';
+        $controller = new ImageController();
+        $controller->deleteImage();
+    }
+    elseif (preg_match('#^/api/admin/images$#', $path) && $requestMethod === 'GET') {
+        require_once __DIR__ . '/../app/controller/imageController.php';
+        $controller = new ImageController();
+        $controller->getImages();
     }
     
     // API Info

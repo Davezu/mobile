@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GCash Test Payment - Auto Authorize</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #00B14F 0%, #00953B 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            text-align: center;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            max-width: 400px;
+            width: 100%;
+            animation: slideUp 0.5s ease-out;
+        }
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .processing-icon {
+            width: 80px;
+            height: 80px;
+            background: #00B14F;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 20px;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        h1 {
+            color: #333;
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+        p {
+            color: #666;
+            font-size: 16px;
+            margin-bottom: 20px;
+        }
+        .amount {
+            font-size: 32px;
+            font-weight: bold;
+            color: #00B14F;
+            margin: 20px 0;
+        }
+        .status {
+            background: #f0f8f0;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border-left: 4px solid #00B14F;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="processing-icon">
+            <div class="spinner"></div>
+        </div>
+        <h1>GCash Test Payment</h1>
+        <p>Processing your test payment...</p>
+        <div class="amount" id="amount">₱ 0.00</div>
+        <div class="status">
+            <strong>Auto-authorizing test payment...</strong><br>
+            <small>This is a test transaction and will be automatically approved.</small>
+        </div>
+    </div>
+
+    <script>
+        // Get amount from URL parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        const amount = urlParams.get('amount') || '699.99';
+        const checkoutUrl = decodeURIComponent(urlParams.get('success_url') || '');
+        document.getElementById('amount').textContent = '₱ ' + amount;
+
+        // Simulate auto-authorization
+        setTimeout(() => {
+            // Extract session ID from the PayMongo checkout URL
+            // Format: https://checkout.paymongo.com/cs_XXXX_client_YYYY
+            const sessionMatch = checkoutUrl.match(/cs_([a-zA-Z0-9]+)/);
+            const sessionId = sessionMatch ? 'cs_' + sessionMatch[1] : null;
+            
+            if (sessionId) {
+                // Redirect to our success page with the session ID
+                window.location.href = 'http://localhost/e-commerce/public/api/paymongo/payment-success?session_id=' + sessionId;
+            } else {
+                // Fallback: redirect with auto_test flag
+                window.location.href = 'http://localhost/e-commerce/public/api/paymongo/payment-success?auto_test=1';
+            }
+        }, 3000); // 3 second delay to show the processing
+    </script>
+</body>
+</html>
