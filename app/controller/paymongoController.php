@@ -95,6 +95,8 @@ class PayMongoController
             }
         } elseif ($method === 'GET') {
             curl_setopt($ch, CURLOPT_HTTPGET, true);
+        } else {
+            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
         }
 
         $response = curl_exec($ch);
@@ -462,12 +464,32 @@ class PayMongoController
             // If not found by session ID or no session ID, try to get most recent pending payment
             if (!$paymentData) {
                 error_log("Trying to get most recent pending payment...");
-                if (session_status() === PHP_SESSION_NONE) {
-                    session_start();
+                
+                // Try to get user_id from URL parameter (if passed)
+                $userId = $_GET['user_id'] ?? null;
+                
+                // If not in URL, try session
+                if (!$userId) {
+                    if (session_status() === PHP_SESSION_NONE) {
+                        session_start();
+                    }
+                    $userId = $_SESSION['user_id'] ?? null;
                 }
                 
-                $userId = $_SESSION['user_id'] ?? null;
-                error_log("User ID from session: " . ($userId ?? 'null'));
+                // If still no user_id, try to get from checkout session via Paymongo API
+                if (!$userId && $checkoutSessionId && $checkoutSessionId !== '{CHECKOUT_SESSION_ID}') {
+                    try {
+                        $sessionResult = $this->makeRequest('/checkout_sessions/' . $checkoutSessionId, 'GET');
+                        if (isset($sessionResult['data']['attributes']['metadata']['user_id'])) {
+                            $userId = $sessionResult['data']['attributes']['metadata']['user_id'];
+                            error_log("User ID from Paymongo metadata: " . $userId);
+                        }
+                    } catch (Exception $e) {
+                        error_log("Could not fetch checkout session from Paymongo: " . $e->getMessage());
+                    }
+                }
+                
+                error_log("User ID: " . ($userId ?? 'null'));
                 
                 if ($userId) {
                     $query = "SELECT * FROM pending_payments WHERE user_id = ? ORDER BY created_at DESC LIMIT 1";
@@ -475,6 +497,22 @@ class PayMongoController
                     $stmt->execute([$userId]);
                     $paymentData = $stmt->fetch(PDO::FETCH_ASSOC);
                     error_log("Payment data from user ID: " . ($paymentData ? 'found' : 'not found'));
+                    
+                    // If found, update checkout_session_id if it was missing
+                    if ($paymentData && (!$checkoutSessionId || $checkoutSessionId === '{CHECKOUT_SESSION_ID}')) {
+                        $checkoutSessionId = $paymentData['checkout_session_id'];
+                        error_log("Using checkout session ID from pending payment: " . $checkoutSessionId);
+                    }
+                } else {
+                    // Last resort: get the most recent pending payment regardless of user
+                    error_log("No user ID found, trying to get most recent pending payment...");
+                    $query = "SELECT * FROM pending_payments ORDER BY created_at DESC LIMIT 1";
+                    $stmt = $conn->query($query);
+                    $paymentData = $stmt->fetch(PDO::FETCH_ASSOC);
+                    if ($paymentData) {
+                        $checkoutSessionId = $paymentData['checkout_session_id'];
+                        error_log("Found most recent pending payment for user_id: " . $paymentData['user_id']);
+                    }
                 }
             }
             
@@ -486,12 +524,46 @@ class PayMongoController
             // Decode items
             $items = json_decode($paymentData['items'], true);
             
-            // Create order
-            $order = $this->orderModel->create(
-                $paymentData['user_id'],
-                $items,
-                $paymentData['shipping_address']
-            );
+            if (!$items || !is_array($items)) {
+                error_log("Payment Success: Failed to decode items - " . $paymentData['items']);
+                $this->showErrorPage('Invalid payment data: items could not be decoded');
+                return;
+            }
+            
+            error_log("Payment Success: Creating order with user_id=" . $paymentData['user_id'] . ", items=" . count($items));
+            
+            try {
+                // Create order with checkout session ID
+                $order = $this->orderModel->create(
+                    $paymentData['user_id'],
+                    $items,
+                    $paymentData['shipping_address'],
+                    $checkoutSessionId
+                );
+                
+                if (!$order) {
+                    error_log("Payment Success: Order creation returned null/false");
+                    $this->showErrorPage('Failed to create order');
+                    return;
+                }
+                
+                error_log("Payment Success: Order created successfully - Order ID: " . $order['id']);
+
+                // Since payment was successful (user reached this page), update order status to processing
+                if ($order && $order['status'] === 'pending') {
+                    $updated = $this->orderModel->updateStatus($order['id'], 'processing');
+                    if ($updated) {
+                        error_log("Payment Success: Updated order #" . $order['id'] . " status to processing");
+                    } else {
+                        error_log("Payment Success: Failed to update order #" . $order['id'] . " status");
+                    }
+                }
+            } catch (Exception $e) {
+                error_log("Payment Success: Exception creating order - " . $e->getMessage());
+                error_log("Payment Success: Stack trace - " . $e->getTraceAsString());
+                $this->showErrorPage('Failed to create order: ' . $e->getMessage());
+                return;
+            }
 
             // Delete pending payment record
             $deleteQuery = "DELETE FROM pending_payments WHERE checkout_session_id = ?";
@@ -529,6 +601,190 @@ class PayMongoController
         }
 
         $this->showErrorPage('Payment was cancelled or failed');
+    }
+
+    /**
+     * Handle Paymongo Webhook
+     * POST /api/paymongo/webhook
+     * This is called by Paymongo when payment events occur
+     */
+    public function handleWebhook()
+    {
+        try {
+            // Get raw POST data
+            $payload = file_get_contents('php://input');
+            
+            if (!$payload) {
+                error_log("Paymongo Webhook: No payload received");
+                http_response_code(400);
+                echo json_encode(['error' => 'No payload received']);
+                return;
+            }
+
+            // Decode the webhook event
+            $event = json_decode($payload, true);
+            
+            if (!$event || !isset($event['data'])) {
+                error_log("Paymongo Webhook: Invalid payload structure");
+                http_response_code(400);
+                echo json_encode(['error' => 'Invalid payload structure']);
+                return;
+            }
+
+            // Paymongo webhook structure: event.data.attributes.type and event.data.attributes.data
+            $eventType = $event['data']['attributes']['type'] ?? null;
+            $eventData = $event['data']['attributes']['data'] ?? [];
+            
+            // Also check for checkout_session in the data
+            $checkoutSession = $eventData['attributes']['checkout_session'] ?? null;
+            
+            error_log("Paymongo Webhook: Event type = " . $eventType);
+            error_log("Paymongo Webhook: Full event structure = " . json_encode($event));
+            error_log("Paymongo Webhook: Event data = " . json_encode($eventData));
+
+            // Handle different event types
+            switch ($eventType) {
+                case 'checkout_session.payment.paid':
+                case 'payment.paid':
+                    $this->handlePaymentPaid($eventData, $event);
+                    break;
+                    
+                case 'checkout_session.payment.failed':
+                case 'payment.failed':
+                    $this->handlePaymentFailed($eventData, $event);
+                    break;
+                    
+                case 'payment.processing':
+                    $this->handlePaymentProcessing($eventData, $event);
+                    break;
+                    
+                default:
+                    error_log("Paymongo Webhook: Unknown event type: " . $eventType);
+            }
+
+            // Always return 200 to acknowledge receipt
+            http_response_code(200);
+            echo json_encode(['status' => 'received', 'event_type' => $eventType]);
+            
+        } catch (Exception $e) {
+            error_log("Paymongo Webhook Error: " . $e->getMessage());
+            http_response_code(200); // Still return 200 to prevent Paymongo from retrying
+            echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Handle payment paid event
+     */
+    private function handlePaymentPaid($eventData, $fullEvent)
+    {
+        error_log("Paymongo Webhook: Processing payment.paid event");
+        
+        // Extract checkout session ID from different possible locations
+        $checkoutSessionId = null;
+        
+        // Try to get from event data directly
+        if (isset($eventData['id'])) {
+            // Check if this is a checkout session ID
+            if (strpos($eventData['id'], 'cs_') === 0) {
+                $checkoutSessionId = $eventData['id'];
+            }
+        }
+        
+        // Try to get from attributes
+        if (!$checkoutSessionId && isset($fullEvent['data']['attributes']['id'])) {
+            $id = $fullEvent['data']['attributes']['id'];
+            if (strpos($id, 'cs_') === 0) {
+                $checkoutSessionId = $id;
+            }
+        }
+        
+        // Try to get from checkout_session reference in attributes
+        if (!$checkoutSessionId && isset($eventData['attributes']['checkout_session'])) {
+            $checkoutSessionRef = $eventData['attributes']['checkout_session'];
+            // Could be an object with id, or just the id string
+            if (is_array($checkoutSessionRef) && isset($checkoutSessionRef['id'])) {
+                $checkoutSessionId = $checkoutSessionRef['id'];
+            } elseif (is_string($checkoutSessionRef) && strpos($checkoutSessionRef, 'cs_') === 0) {
+                $checkoutSessionId = $checkoutSessionRef;
+            }
+        }
+        
+        // Try to get from the main event data id (if it's a checkout session)
+        if (!$checkoutSessionId && isset($fullEvent['data']['id'])) {
+            $id = $fullEvent['data']['id'];
+            if (strpos($id, 'cs_') === 0) {
+                $checkoutSessionId = $id;
+            }
+        }
+        
+        // Try to get from relationships if present
+        if (!$checkoutSessionId && isset($fullEvent['data']['relationships']['checkout_session']['data']['id'])) {
+            $checkoutSessionId = $fullEvent['data']['relationships']['checkout_session']['data']['id'];
+        }
+
+        error_log("Paymongo Webhook: Checkout session ID = " . ($checkoutSessionId ?? 'not found'));
+
+        if (!$checkoutSessionId) {
+            error_log("Paymongo Webhook: Could not find checkout session ID in event data");
+            return;
+        }
+
+        // Find order by checkout session ID
+        $order = $this->orderModel->getByCheckoutSessionId($checkoutSessionId);
+        
+        if (!$order) {
+            error_log("Paymongo Webhook: Order not found for checkout session: " . $checkoutSessionId);
+            return;
+        }
+
+        error_log("Paymongo Webhook: Found order #" . $order['id'] . " for checkout session: " . $checkoutSessionId);
+
+        // Update order status to processing (payment confirmed)
+        if ($order['status'] === 'pending') {
+            $updated = $this->orderModel->updateStatus($order['id'], 'processing');
+            if ($updated) {
+                error_log("Paymongo Webhook: Updated order #" . $order['id'] . " status to processing");
+            } else {
+                error_log("Paymongo Webhook: Failed to update order #" . $order['id']);
+            }
+        } else {
+            error_log("Paymongo Webhook: Order #" . $order['id'] . " already has status: " . $order['status']);
+        }
+    }
+
+    /**
+     * Handle payment failed event
+     */
+    private function handlePaymentFailed($eventData, $fullEvent)
+    {
+        error_log("Paymongo Webhook: Processing payment.failed event");
+        
+        // Extract checkout session ID (similar to handlePaymentPaid)
+        $checkoutSessionId = null;
+        
+        if (isset($eventData['id']) && strpos($eventData['id'], 'cs_') === 0) {
+            $checkoutSessionId = $eventData['id'];
+        } elseif (isset($fullEvent['data']['id']) && strpos($fullEvent['data']['id'], 'cs_') === 0) {
+            $checkoutSessionId = $fullEvent['data']['id'];
+        }
+
+        if ($checkoutSessionId) {
+            $order = $this->orderModel->getByCheckoutSessionId($checkoutSessionId);
+            if ($order && $order['status'] === 'pending') {
+                $this->orderModel->updateStatus($order['id'], 'cancelled');
+                error_log("Paymongo Webhook: Cancelled order #" . $order['id'] . " due to payment failure");
+            }
+        }
+    }
+
+    /**
+     * Handle payment processing event
+     */
+    private function handlePaymentProcessing($eventData, $fullEvent)
+    {
+        error_log("Paymongo Webhook: Processing payment.processing event");
+        // Payment is being processed, order can remain as pending
     }
 
     /**

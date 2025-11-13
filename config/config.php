@@ -62,6 +62,10 @@ define("APP_ENV", env('APP_ENV', 'development'));
 define("APP_DEBUG", env('APP_DEBUG', true));
 define("APP_URL", env('APP_URL', 'http://localhost/e-commerce'));
 
+// Firebase Configuration
+define("FIREBASE_SERVICE_ACCOUNT_PATH", env('FIREBASE_SERVICE_ACCOUNT_PATH', __DIR__ . '/firebase-service-account.json'));
+define("FIREBASE_STORAGE_BUCKET", env('FIREBASE_STORAGE_BUCKET', ''));
+
 // For API endpoints, never display errors (they break JSON responses)
 error_reporting(E_ALL);
 ini_set("display_errors", 0);

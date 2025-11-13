@@ -21,7 +21,7 @@ class Order
     /**
      * Create new order
      */
-    public function create($userId, $items, $shippingAddress)
+    public function create($userId, $items, $shippingAddress, $checkoutSessionId = null)
     {
         try {
             $this->conn->beginTransaction();
@@ -32,15 +32,35 @@ class Order
                 $total += $item['price'] * $item['quantity'];
             }
 
-            // Create order
-            $query = "INSERT INTO {$this->ordersTable} 
-                      (user_id, total_amount, shipping_address, status) 
-                      VALUES (:user_id, :total_amount, :shipping_address, 'pending')";
+            // Check if checkout_session_id column exists
+            $hasCheckoutSessionColumn = false;
+            try {
+                $checkQuery = "SHOW COLUMNS FROM {$this->ordersTable} LIKE 'checkout_session_id'";
+                $checkStmt = $this->conn->query($checkQuery);
+                $hasCheckoutSessionColumn = $checkStmt->rowCount() > 0;
+            } catch (Exception $e) {
+                // Column doesn't exist, continue without it
+                error_log("Order Model: checkout_session_id column not found, creating order without it");
+            }
+
+            // Create order - include checkout_session_id only if column exists
+            if ($hasCheckoutSessionColumn) {
+                $query = "INSERT INTO {$this->ordersTable} 
+                          (user_id, total_amount, shipping_address, status, checkout_session_id) 
+                          VALUES (:user_id, :total_amount, :shipping_address, 'pending', :checkout_session_id)";
+            } else {
+                $query = "INSERT INTO {$this->ordersTable} 
+                          (user_id, total_amount, shipping_address, status) 
+                          VALUES (:user_id, :total_amount, :shipping_address, 'pending')";
+            }
             
             $stmt = $this->conn->prepare($query);
             $stmt->bindParam(':user_id', $userId);
             $stmt->bindParam(':total_amount', $total);
             $stmt->bindParam(':shipping_address', $shippingAddress);
+            if ($hasCheckoutSessionColumn) {
+                $stmt->bindParam(':checkout_session_id', $checkoutSessionId);
+            }
             $stmt->execute();
 
             $orderId = $this->conn->lastInsertId();
@@ -194,6 +214,25 @@ class Order
         $stmt->execute();
         
         return $stmt->fetchColumn() > 0;
+    }
+
+    /**
+     * Get order by checkout session ID
+     */
+    public function getByCheckoutSessionId($checkoutSessionId)
+    {
+        $query = "SELECT * FROM {$this->ordersTable} WHERE checkout_session_id = :checkout_session_id";
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(':checkout_session_id', $checkoutSessionId);
+        $stmt->execute();
+        
+        $order = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($order) {
+            $order['items'] = $this->getOrderItems($order['id']);
+        }
+        
+        return $order;
     }
 }
 

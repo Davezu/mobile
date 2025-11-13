@@ -168,6 +168,11 @@ try {
         $controller = new PayMongoController();
         $controller->paymentFailed();
     }
+    elseif (preg_match('#^/api/paymongo/webhook$#', $path) && $requestMethod === 'POST') {
+        require_once __DIR__ . '/../app/controller/paymongoController.php';
+        $controller = new PayMongoController();
+        $controller->handleWebhook();
+    }
     
     // Order Routes
     elseif (preg_match('#^/api/orders$#', $path) && $requestMethod === 'POST') {

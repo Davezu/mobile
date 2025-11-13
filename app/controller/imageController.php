@@ -8,6 +8,7 @@ require_once __DIR__ . '/authController.php';
 /**
  * Image Upload Controller
  * Handles image uploads for products
+ * Images are stored locally and URLs are saved in the database
  */
 class ImageController
 {
@@ -70,13 +71,11 @@ class ImageController
             Response::error('Invalid file type. Allowed types: ' . implode(', ', $this->allowedTypes));
         }
 
-        // Generate unique filename
+        // Upload to local storage
         $filename = uniqid() . '_' . time() . '.' . $fileExtension;
         $filepath = $this->uploadDir . $filename;
 
-        // Move uploaded file
         if (move_uploaded_file($file['tmp_name'], $filepath)) {
-            // Return the public URL
             $baseUrl = $this->getBaseUrl();
             $imageUrl = $baseUrl . '/' . $filepath;
             
@@ -146,11 +145,10 @@ class ImageController
                 Response::error('Unsupported image format');
         }
 
-        // Generate unique filename
+        // Upload to local storage
         $filename = uniqid() . '_' . time() . '.' . $extension;
         $filepath = $this->uploadDir . $filename;
 
-        // Save image
         if (file_put_contents($filepath, $imageData)) {
             $baseUrl = $this->getBaseUrl();
             $imageUrl = $baseUrl . '/' . $filepath;
@@ -182,7 +180,7 @@ class ImageController
 
         $imageUrl = $input['image_url'];
         
-        // Extract filepath from URL
+        // Delete from local storage
         $baseUrl = $this->getBaseUrl();
         $filepath = str_replace($baseUrl . '/', '', $imageUrl);
         

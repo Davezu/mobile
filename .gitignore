@@ -81,3 +81,6 @@ config/database.local.php
 *.pem
 *.key
 *.crt
+
+# Firebase Service Account (contains sensitive credentials)
+config/firebase-service-account.json
